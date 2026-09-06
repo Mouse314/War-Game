@@ -2,12 +2,7 @@
 #pragma kernel HashPositions
 #pragma kernel BuildOffsets
 
-struct ParticleData
-{
-    float3 position;
-    float3 velocity;
-    float4 color;
-};
+#include "Assets/Shaders/ParticleData.hlsl"
 
 float _Radius;
 uint _ParticleCount;
@@ -48,8 +43,14 @@ void HashPositions(uint3 id : SV_DispatchThreadID)
 
     if (id.x < _ParticleCount)
     {
-        float3 pos = _Positions[id.x].position;
-        uint hash = HashCell(GetCell(pos));
+        ParticleData particle = _Positions[id.x];
+        if (particle.isAlive == 0)
+        {
+            _SortBuffer[id.x] = uint2(0xFFFFFFFF, 0xFFFFFFFF);
+            return;
+        }
+
+        uint hash = HashCell(GetCell(particle.position));
         _SortBuffer[id.x] = uint2(hash, id.x);
     }
     else

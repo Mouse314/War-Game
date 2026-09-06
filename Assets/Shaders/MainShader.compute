@@ -1,11 +1,6 @@
 #pragma kernel CSMain
 
-struct ParticleData
-{
-    float3 position;
-    float3 velocity;
-    float4 color;
-};
+#include "Assets/Shaders/ParticleData.hlsl"
 
 StructuredBuffer<ParticleData> _particlesDataRead;
 RWStructuredBuffer<ParticleData> _particlesDataWrite;
@@ -24,13 +19,20 @@ uint _TableSize;
 Texture2D<float4> _LandscapeTexture;
 SamplerState sampler_LandscapeTexture;
 
-// Mouse
+// Mouse & keyboard input
 float2 _mousePosition;
+int _mouseButtonPressed;
 int _isMouseClicked;
+int _isShiftPressed;
 
 // Simulation parameters
 float _repulsionStrength = 10.0;
 float _cohesionStrength = 0.1;
+float _attackStrength;
+bool _isPaused;
+
+// Spawn
+int _spawnIndex;
 
 int2 GetCell(float3 pos)
 {
@@ -55,24 +57,45 @@ void CSMain (uint3 id : SV_DispatchThreadID)
 
     particleData = _particlesDataRead[index];
 
+    // --- Spawn ---
+    if (particleData.isAlive == 0 && _isShiftPressed == 1)
+    {
+        if (_isMouseClicked == 1 && index == _spawnIndex)
+        {
+            particleData.position = float3(_mousePosition.x, 0, _mousePosition.y);
+            particleData.velocity = float3(0, 0, 0);
+            particleData.color = float4(1, 1, 1, 1);
+            particleData.isAlive = 1;
+            particleData.fraction = _mouseButtonPressed; // 0 for left button, 1 for right button
+            particleData.health = 1.0; // Reset health to 1.0 on spawn
+        }
+        else
+        {
+            _particlesDataWrite[index] = particleData;
+            return;
+        }
+    }
 
-    // --- Ajust velocity ---
+    // --- Adjust position ---
     // Mouse impact
-    if (_isMouseClicked == 1)
+    if (_isMouseClicked == 1 && _isShiftPressed == 0)
     {
         float3 mousePos = float3(_mousePosition.x, 0, _mousePosition.y);
         float3 direction = mousePos - particleData.position;
         float distance = length(direction);
 
-        if (distance > 0.0001 && distance < 1.0)
+        if (distance > 0.0001 && distance < 1.0 && _mouseButtonPressed == particleData.fraction)
         {
-            float force = (1.0 - distance) * 100.0;
+            float force = (1.0 - distance) * 25.0;
             particleData.velocity += normalize(direction) * -force * deltaTime;
         }
     }
 
-    // Repulsion & cohesion impact
-    int neighborCount = 0;
+    float3 enemyCenterOfMass = float3(0, 0, 0);
+    int enemyCount = 0;
+
+    // --- Repulsion & cohesion & attack ---
+    // Repulsion - from all neighbours, Cohesion - to same fraction neighbours
     int2 myCell = GetCell(particleData.position);
     for (int ox = -1; ox <= 1; ox++)
     {
@@ -86,30 +109,47 @@ void CSMain (uint3 id : SV_DispatchThreadID)
                 uint otherIndex = _sortBuffer[j].y;
                 if (otherIndex == (uint)index) continue;
                 ParticleData otherParticle = _particlesDataRead[otherIndex];
+                if (otherParticle.isAlive == 0) continue;
                 float3 direction = particleData.position - otherParticle.position;
                 float distance = length(direction.xz);
-                neighborCount++;
 
-                if (distance < _Radius / 2.0) // Repulsion
-                {
+                // Repulsion 
+                if (distance < _Radius / 2.0) {
                     float force = (_Radius / 2.0 - distance) * _repulsionStrength;
                     particleData.velocity += normalize(direction) * force * deltaTime;
-                }
-                else if (distance < _Radius) // Cohesion
-                {
+                } 
+                // Cohesion
+                else if (distance < _Radius && otherParticle.fraction == particleData.fraction) {
                     float force = (_Radius - distance) * _cohesionStrength;
                     particleData.velocity -= normalize(direction) * force * deltaTime;
                 }
+                // Take damage (only not in pause mode)
+                if (distance < _Radius && otherParticle.fraction != particleData.fraction && _isPaused == 0) {
+                    enemyCenterOfMass += otherParticle.position;
+                    enemyCount++;
+                    float attackForce = pow(_Radius - distance, 2) * _attackStrength; 
+                    particleData.health -= attackForce * deltaTime;
+                }
             }
+        }
+    }
+
+    // Enemy center of mass adjustment
+    if (enemyCount > 0)
+    {
+        enemyCenterOfMass /= enemyCount;
+        float3 directionToEnemy = enemyCenterOfMass - particleData.position;
+        float distanceToEnemy = length(directionToEnemy.xz);
+        if (distanceToEnemy > 0.0001)
+        {
+            float attackForce = (_Radius - distanceToEnemy) * _attackStrength;
+            particleData.velocity += normalize(directionToEnemy) * 25 * attackForce * deltaTime;
         }
     }
 
     // Keep the simulation on the xOz plane.
     particleData.velocity.y = 0.0;
     particleData.velocity *= 0.95;
-
-    // gravity
-    // particleData.velocity.x += 9.81 * deltaTime;
 
     // --- Ajust position ---
     float wallLimit = 6.0;
@@ -140,17 +180,20 @@ void CSMain (uint3 id : SV_DispatchThreadID)
         particleData.velocity.z = -abs(particleData.velocity.z) * wallRestitution;
     }
 
+    // --- Death check ---
+    if (particleData.health <= 0.0)
+    {
+        particleData.isAlive = 0;
+        particleData.health = 1.0; // Reset health for future spawns
+    }
+
     // --- Ajust color ---
-    float textureHorizontalScale = 2560.0 / 1440.0;
-
-    // Rotate world pos 90 degrees around Y axis
-    float3 rotatedPos = float3(particleData.position.z, particleData.position.y, -particleData.position.x);
-
-    rotatedPos.x /= textureHorizontalScale;
-
-    float2 uv = saturate((rotatedPos.xz) / 1.85 / 10.0 + 0.5);
-    float4 colorFromTexture = _LandscapeTexture.SampleLevel(sampler_LandscapeTexture, uv, 0.0);
-    particleData.color = colorFromTexture * 2.0;
+    // float textureHorizontalScale = 2560.0 / 1440.0;
+    // float3 rotatedPos = float3(particleData.position.z, particleData.position.y, -particleData.position.x);
+    // rotatedPos.x /= textureHorizontalScale;
+    // float2 uv = saturate((rotatedPos.xz) / 1.85 / 10.0 + 0.5);
+    // float4 colorFromTexture = _LandscapeTexture.SampleLevel(sampler_LandscapeTexture, uv, 0.0);
+    // particleData.color = colorFromTexture * 2.0;
 
     // --- Update particle data ---
     _particlesDataWrite[index] = particleData;

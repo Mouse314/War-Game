@@ -705,15 +705,16 @@ MonoBehaviour:
   setPositionsShader: {fileID: 7200000, guid: 9cc41e9056719514fb884faf6555d0e7, type: 3}
   initShader: {fileID: 7200000, guid: cb33940a890df394f8fc3ae95af144a2, type: 3}
   sortShader: {fileID: 7200000, guid: 3515573f674945744af62c208fbe4b0e, type: 3}
-  searchRadius: 0.2
-  size: 300
+  searchRadius: 0.5
+  size: 100
   particleControl: {fileID: 11400000, guid: eb89353ac44f95140a745ccef53fb8e1, type: 2}
   glow: 5
-  particleSize: 0.01
+  particleSize: 0.1
   _repulsionStrength: 100
-  _cohesionStrength: 0.1
+  _cohesionStrength: 10
   landscapePlaneTransform: {fileID: 1485021546}
   landscapeTexture: {fileID: 8600000, guid: bab601a0804846f44a650b208f733fa5, type: 2}
+  _attackStrength: 1
 --- !u!4 &1527536513
 Transform:
   m_ObjectHideFlags: 0

@@ -1,11 +1,6 @@
 #pragma kernel CSMain
 
-struct ParticleData
-{
-    float3 position;
-    float3 velocity;
-    float4 color;
-};
+#include "Assets/Shaders/ParticleData.hlsl"
 
 RWStructuredBuffer<ParticleData> _particlesData;
 
@@ -39,6 +34,9 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     particleData.position = pos;
     particleData.velocity = float3(0, 0, 0);
     particleData.color = float4(random(index), random(index + 1), random(index + 2), 1.0);
+    particleData.isAlive = 0;
+    particleData.fraction = 0;
+    particleData.health = 1.0; // Initialize health to 1.0
 
     _particlesData[index] = particleData;
 }
