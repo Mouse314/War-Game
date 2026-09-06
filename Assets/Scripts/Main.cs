@@ -32,8 +32,11 @@ public class Main : MonoBehaviour
     private ComputeBuffer _particlesDataBuffer;
     private ComputeBuffer _nextParticlesDataBuffer;
 
+    private ComputeBuffer _gameStatsBuffer; // 0 = faction 0 alive count, 1 = faction 1 alive count
+
     private int dimensionSize = 4;
     private int threadGroupSize;
+    private int clearDamageKernel;
 
     public ParticleControl particleControl;
     public float glow = 1.0f;
@@ -41,6 +44,7 @@ public class Main : MonoBehaviour
 
     public float _repulsionStrength = 10.0f;
     public float _cohesionStrength = 0.1f;
+    public float _centerOfMassStrength = 10.0f;
 
     // Landscape
 
@@ -50,6 +54,7 @@ public class Main : MonoBehaviour
     private Plane landscapePlane;
 
     // Game logic
+    private int _spawnCounter = 0;
     public float _attackStrength = 10.0f;
     private int nextSpawnIndex;
     private bool wasMousePressed;
@@ -67,6 +72,7 @@ public class Main : MonoBehaviour
         computeShader.SetFloat("_repulsionStrength", _repulsionStrength);
         computeShader.SetFloat("_cohesionStrength", _cohesionStrength);
         computeShader.SetFloat("_attackStrength", _attackStrength);
+        computeShader.SetFloat("_centerOfMassStrength", _centerOfMassStrength);
         computeShader.SetBool("_isPaused", isPaused);
 
         setPositionsShader.SetInt("size", size);
@@ -78,10 +84,15 @@ public class Main : MonoBehaviour
         _nextParticlesDataBuffer = new ComputeBuffer(size * size, particleDataStride);
         setPositionsShader.SetBuffer(0, "_particlesData", _particlesDataBuffer);
 
+        _gameStatsBuffer = new ComputeBuffer(2, sizeof(int));
+        _gameStatsBuffer.SetData(new int[2] { 0, 0 }); // Initialize alive counts to 0
+        computeShader.SetBuffer(0, "_gameStats", _gameStatsBuffer);
+
         setPositionsShader.Dispatch(0, threadGroupSize, 1, threadGroupSize);
 
         landscapePlane = new Plane(landscapePlaneTransform.up, landscapePlaneTransform.position);
         nextSpawnIndex = 0;
+
     }
 
     void Update()
@@ -93,6 +104,7 @@ public class Main : MonoBehaviour
         computeShader.SetFloat("_repulsionStrength", _repulsionStrength);
         computeShader.SetFloat("_cohesionStrength", _cohesionStrength);
         computeShader.SetFloat("_attackStrength", _attackStrength);
+        computeShader.SetFloat("_centerOfMassStrength", _centerOfMassStrength);
         computeShader.SetBuffer(0, "_particlesDataRead", _particlesDataBuffer);
         computeShader.SetBuffer(0, "_particlesDataWrite", _nextParticlesDataBuffer);
         computeShader.SetBuffer(0, "_sortBuffer", spatialHashSystem.SortBuffer);
@@ -108,9 +120,12 @@ public class Main : MonoBehaviour
             {
                 Vector3 hitPoint = Camera.main.ScreenPointToRay(Mouse.current.position.ReadValue()).GetPoint(enter);
                 computeShader.SetVector("_mousePosition", new Vector2(hitPoint.x, hitPoint.z));
-                spawnParticle = !wasMousePressed && nextSpawnIndex < size * size;
+                spawnParticle = nextSpawnIndex < size * size;
                 computeShader.SetInt("_mouseButtonPressed", Mouse.current.leftButton.isPressed ? 0 : 1);
-                computeShader.SetInt("_spawnIndex", spawnParticle ? nextSpawnIndex : -1);
+                if (_spawnCounter++ % 10 == 0)
+                    computeShader.SetInt("_spawnIndex", spawnParticle ? nextSpawnIndex : -1);
+                Vector2 mouseDelta = Mouse.current.delta.ReadValue();
+                computeShader.SetVector("_mouseDelta", new Vector3(mouseDelta.y, 0, -mouseDelta.x));
             }
         }
         computeShader.SetInt("_isMouseClicked", isMousePressed ? 1 : 0);
@@ -125,7 +140,7 @@ public class Main : MonoBehaviour
 
         if (spawnParticle)
         {
-            nextSpawnIndex++;
+            nextSpawnIndex = (nextSpawnIndex + 1) % (size * size);
         }
         wasMousePressed = isMousePressed;
 
@@ -133,6 +148,10 @@ public class Main : MonoBehaviour
         spatialHashSystem.Dispatch(_particlesDataBuffer, searchRadius);
 
         computeShader.Dispatch(0, threadGroupSize, 1, threadGroupSize);
+
+        int[] gameStats = new int[2];
+        _gameStatsBuffer.GetData(gameStats);
+        print($"Faction 0 alive count: {gameStats[0]}, Faction 1 alive count: {gameStats[1]}");
 
         (_particlesDataBuffer, _nextParticlesDataBuffer) = (_nextParticlesDataBuffer, _particlesDataBuffer);
         particleControl.DrawInstances(_particlesDataBuffer, size * size, glow, particleSize);
@@ -148,6 +167,11 @@ public class Main : MonoBehaviour
         if (_nextParticlesDataBuffer != null)
         {
             _nextParticlesDataBuffer.Release();
+        }
+
+        if (_gameStatsBuffer != null)
+        {
+            _gameStatsBuffer.Release();
         }
 
         spatialHashSystem?.Dispose();

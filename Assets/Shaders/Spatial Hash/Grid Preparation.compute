@@ -6,7 +6,7 @@
 
 float _Radius;
 uint _ParticleCount;
-uint _TableSize; // Должно быть степенью двойки (равно размеру буфера сортировки)
+uint _TableSize;
 
 StructuredBuffer<ParticleData> _Positions;
 RWStructuredBuffer<uint2> _SortBuffer; // x = hash, y = particle index
@@ -22,7 +22,6 @@ uint HashCell(int2 cell)
 {
     const uint p1 = 73856093;
     const uint p2 = 19349663;
-    // Умножение на большие простые числа дает хорошее распределение
     uint h = (uint(cell.x) * p1) ^ (uint(cell.y) * p2);
     return h % _TableSize;
 }

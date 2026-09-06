@@ -47,8 +47,8 @@ public class SpatialHashSystem : IDisposable
         }
 
         _hashShader.SetInt("_ParticleCount", _particleCount);
-        _hashShader.SetInt("_TableSize", _paddedCount);
         _hashShader.SetFloat("_Radius", searchRadius);
+        _hashShader.SetInt("_TableSize", _paddedCount);
 
         int groups = _paddedCount / 256;
         int sortGroups = _paddedCount / 512;

@@ -1,0 +1,31 @@
+#pragma kernel CSMain
+
+#include "Assets/Shaders/ParticleData.hlsl"
+
+StructuredBuffer<ParticleData> _particlesDataRead;
+int size;
+
+RWStructuredBuffer<float3> _fraction0CenterOfMass;
+RWStructuredBuffer<float3> _fraction1CenterOfMass;
+
+[numthreads(4,1,4)]
+void CSMain(uint3 id : SV_DispatchThreadID)
+{
+    int index = id.x * size + id.z;
+
+    if (index >= size * size) return;
+
+    ParticleData particleData = _particlesDataRead[index];
+
+    // Only process alive particles
+    if (particleData.isAlive == 0) return;
+
+    if (particleData.fraction == 0)
+    {
+        _fraction0CenterOfMass[0] = particleData.position;
+    }
+    else if (particleData.fraction == 1)
+    {
+        _fraction1CenterOfMass[0] = particleData.position;
+    }
+}
