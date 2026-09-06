@@ -1,0 +1,28 @@
+#pragma kernel BitonicSort
+
+RWStructuredBuffer<uint2> _SortBuffer;
+uint _Block;
+uint _Dim;
+
+[numthreads(256, 1, 1)]
+void BitonicSort(uint3 id : SV_DispatchThreadID)
+{
+    uint threadId = id.x;
+
+    // Каждый поток обрабатывает ровно 2 элемента (отсюда отсутствие ветвлений простоя)
+    uint step = _Block;
+    uint i = (threadId / step) * step * 2 + (threadId % step);
+    uint j = i + step;
+
+    uint2 valI = _SortBuffer[i];
+    uint2 valJ = _SortBuffer[j];
+
+    bool dir = (i & _Dim) == 0;
+    bool swap = dir ? (valI.x > valJ.x) : (valI.x < valJ.x);
+
+    if (swap)
+    {
+        _SortBuffer[i] = valJ;
+        _SortBuffer[j] = valI;
+    }
+}

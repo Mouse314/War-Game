@@ -1,0 +1,44 @@
+#pragma kernel CSMain
+
+struct ParticleData
+{
+    float3 position;
+    float3 velocity;
+    float4 color;
+};
+
+RWStructuredBuffer<ParticleData> _particlesData;
+
+int size;
+float spread;
+
+float random(float seed)
+{
+    return frac(sin(seed) * 43758.5453);
+}
+
+[numthreads(4,1,4)]
+void CSMain (uint3 id : SV_DispatchThreadID)
+{
+    int x = id.x;
+    int z = id.z;
+
+    if (x >= size || z >= size) return;
+
+    int index =  size * x + z;
+
+    // Uniform distribution on vertical plane.
+    float3 pos = float3(
+        (x / (float)size - 0.5) * spread,
+        0.0,
+        (z / (float)size - 0.5) * spread
+    );
+
+    ParticleData particleData = _particlesData[index];
+
+    particleData.position = pos;
+    particleData.velocity = float3(0, 0, 0);
+    particleData.color = float4(random(index), random(index + 1), random(index + 2), 1.0);
+
+    _particlesData[index] = particleData;
+}

@@ -1,0 +1,81 @@
+#pragma kernel ClearOffsets
+#pragma kernel HashPositions
+#pragma kernel BuildOffsets
+
+struct ParticleData
+{
+    float3 position;
+    float3 velocity;
+    float4 color;
+};
+
+float _Radius;
+uint _ParticleCount;
+uint _TableSize; // Должно быть степенью двойки (равно размеру буфера сортировки)
+
+StructuredBuffer<ParticleData> _Positions;
+RWStructuredBuffer<uint2> _SortBuffer; // x = hash, y = particle index
+RWStructuredBuffer<uint2> _CellOffsets; // x = start index, y = end index
+
+// --- Вспомогательные функции хэширования ---
+int2 GetCell(float3 pos)
+{
+    return int2(floor(pos.x / _Radius), floor(pos.z / _Radius));
+}
+
+uint HashCell(int2 cell)
+{
+    const uint p1 = 73856093;
+    const uint p2 = 19349663;
+    // Умножение на большие простые числа дает хорошее распределение
+    uint h = (uint(cell.x) * p1) ^ (uint(cell.y) * p2);
+    return h % _TableSize;
+}
+
+// 1. Очистка буфера ячеек (вызывается перед построением)
+[numthreads(256, 1, 1)]
+void ClearOffsets(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= _TableSize) return;
+    _CellOffsets[id.x] = uint2(0, 0);
+}
+
+// 2. Расчет хэша для каждой частицы
+[numthreads(256, 1, 1)]
+void HashPositions(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= _TableSize) return;
+
+    if (id.x < _ParticleCount)
+    {
+        float3 pos = _Positions[id.x].position;
+        uint hash = HashCell(GetCell(pos));
+        _SortBuffer[id.x] = uint2(hash, id.x);
+    }
+    else
+    {
+        // Заполняем "хвост" максимальными значениями, чтобы они ушли в конец при сортировке
+        _SortBuffer[id.x] = uint2(0xFFFFFFFF, 0xFFFFFFFF);
+    }
+}
+
+// 3. Построение границ (start/end) для каждой ячейки после сортировки
+[numthreads(256, 1, 1)]
+void BuildOffsets(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= _TableSize) return;
+    
+    uint hash = _SortBuffer[id.x].x;
+    if (hash == 0xFFFFFFFF) return; // Пропускаем фиктивные данные
+
+    uint prevHash = (id.x == 0) ? 0xFFFFFFFF : _SortBuffer[id.x - 1].x;
+    uint nextHash = (id.x == _TableSize - 1) ? 0xFFFFFFFF : _SortBuffer[id.x + 1].x;
+
+    // Если хэш изменился по сравнению с предыдущим - это начало новой ячейки
+    if (hash != prevHash)
+        _CellOffsets[hash].x = id.x;
+        
+    // Если хэш изменился по сравнению со следующим - это конец текущей ячейки
+    if (hash != nextHash)
+        _CellOffsets[hash].y = id.x + 1;
+}
