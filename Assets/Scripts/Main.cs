@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 using System.Runtime.InteropServices;
+using TMPro;
 
 [StructLayout(LayoutKind.Sequential)]
 struct ParticleData
@@ -59,6 +60,12 @@ public class Main : MonoBehaviour
     private int nextSpawnIndex;
     private bool wasMousePressed;
     private bool isPaused = true;
+
+    // UI
+    public TMP_Text RedAliveText;
+    public TMP_Text BlueAliveText;
+    public TMP_Text RedCasualitiesText;
+    public TMP_Text BlueCasualitiesText;
 
     void Start()
     {
@@ -152,6 +159,8 @@ public class Main : MonoBehaviour
         int[] gameStats = new int[2];
         _gameStatsBuffer.GetData(gameStats);
         print($"Faction 0 alive count: {gameStats[0]}, Faction 1 alive count: {gameStats[1]}");
+        RedAliveText.text = $"Red alive: {gameStats[0]}";
+        BlueAliveText.text = $"Blue alive: {gameStats[1]}";
 
         (_particlesDataBuffer, _nextParticlesDataBuffer) = (_nextParticlesDataBuffer, _particlesDataBuffer);
         particleControl.DrawInstances(_particlesDataBuffer, size * size, glow, particleSize);

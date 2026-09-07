@@ -1,0 +1,4 @@
+<ui:UXML xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" noNamespaceSchemaLocation="../UIElementsSchema/UIElements.xsd" authoring-id="-1165872441">
+    <Style src="project://database/Assets/style.uss?fileID=7433441132597879392&amp;guid=fa22ebb9e34c1f043b7ad61557254703&amp;type=3#style"/>
+    <ui:TextField label="Text Field" placeholder-text="filler text"/>
+</ui:UXML>
