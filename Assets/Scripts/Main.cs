@@ -2,6 +2,7 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 using System.Runtime.InteropServices;
 using TMPro;
+using UnityEngine.Rendering;
 
 [StructLayout(LayoutKind.Sequential)]
 struct ParticleData
@@ -136,7 +137,7 @@ public class Main : MonoBehaviour
             }
         }
         computeShader.SetInt("_isMouseClicked", isMousePressed ? 1 : 0);
-        
+
         computeShader.SetInt("_isShiftPressed", Keyboard.current.shiftKey.isPressed ? 1 : 0);
 
         if (Keyboard.current.spaceKey.wasPressedThisFrame)
@@ -157,10 +158,25 @@ public class Main : MonoBehaviour
         computeShader.Dispatch(0, threadGroupSize, 1, threadGroupSize);
 
         int[] gameStats = new int[2];
-        _gameStatsBuffer.GetData(gameStats);
-        print($"Faction 0 alive count: {gameStats[0]}, Faction 1 alive count: {gameStats[1]}");
-        RedAliveText.text = $"Red alive: {gameStats[0]}";
-        BlueAliveText.text = $"Blue alive: {gameStats[1]}";
+
+        // 2. Делаем асинхронный запрос к буферу
+        AsyncGPUReadback.Request(_gameStatsBuffer, (AsyncGPUReadbackRequest request) =>
+        {
+            // Этот код выполнится ТОЛЬКО тогда, когда GPU вернет данные
+            if (request.hasError)
+            {
+                Debug.LogError("Ошибка чтения данных с GPU");
+                return;
+            }
+
+            // 3. Извлекаем данные в ваш массив
+            var data = request.GetData<int>();
+            data.CopyTo(gameStats);
+
+            // 4. Логируем и обновляем интерфейс уже внутри этого коллбэка
+            RedAliveText.text = $"Red alive: {gameStats[0]}";
+            BlueAliveText.text = $"Blue alive: {gameStats[1]}";
+        });
 
         (_particlesDataBuffer, _nextParticlesDataBuffer) = (_nextParticlesDataBuffer, _particlesDataBuffer);
         particleControl.DrawInstances(_particlesDataBuffer, size * size, glow, particleSize);
