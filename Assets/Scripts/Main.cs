@@ -3,6 +3,7 @@ using UnityEngine.InputSystem;
 using System.Runtime.InteropServices;
 using TMPro;
 using UnityEngine.Rendering;
+using UnityEngine.VFX;
 
 [StructLayout(LayoutKind.Sequential)]
 struct ParticleData
@@ -31,8 +32,12 @@ public class Main : MonoBehaviour
     // Particles
     public int size = 100;
 
-    private ComputeBuffer _particlesDataBuffer;
-    private ComputeBuffer _nextParticlesDataBuffer;
+    private GraphicsBuffer _particlesDataBuffer;
+    private GraphicsBuffer _nextParticlesDataBuffer;
+
+    // xyz = position, w = isAlive (0 or 1). Compact layout for VFX Graph consumption.
+    private GraphicsBuffer _vfxPositionBuffer;
+    private int _packVFXDataKernel;
 
     private ComputeBuffer _gameStatsBuffer; // 0 = faction 0 alive count, 1 = faction 1 alive count
 
@@ -56,17 +61,22 @@ public class Main : MonoBehaviour
     private Plane landscapePlane;
 
     // Game logic
-    private int _spawnCounter = 0;
     public float _attackStrength = 10.0f;
+    public float spawnRate = 20; // Units per second
+    private int _spawnCounter = 0;
     private int nextSpawnIndex;
     private bool wasMousePressed;
     private bool isPaused = true;
+    private Vector2 _mousePos;
 
     // UI
     public TMP_Text RedAliveText;
     public TMP_Text BlueAliveText;
     public TMP_Text RedCasualitiesText;
     public TMP_Text BlueCasualitiesText;
+
+    // Visual Effects
+    public VisualEffect vfxGraph;
 
     void Start()
     {
@@ -88,9 +98,13 @@ public class Main : MonoBehaviour
 
         computeShader.SetTexture(0, "_LandscapeTexture", landscapeTexture != null ? landscapeTexture : Texture2D.whiteTexture);
         int particleDataStride = Marshal.SizeOf<ParticleData>();
-        _particlesDataBuffer = new ComputeBuffer(size * size, particleDataStride);
-        _nextParticlesDataBuffer = new ComputeBuffer(size * size, particleDataStride);
+        _particlesDataBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, size * size, particleDataStride);
+        _nextParticlesDataBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, size * size, particleDataStride);
         setPositionsShader.SetBuffer(0, "_particlesData", _particlesDataBuffer);
+
+        _vfxPositionBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, size * size, sizeof(float) * 4);
+        _packVFXDataKernel = computeShader.FindKernel("PackVFXData");
+        computeShader.SetInt("size", size);
 
         _gameStatsBuffer = new ComputeBuffer(2, sizeof(int));
         _gameStatsBuffer.SetData(new int[2] { 0, 0 }); // Initialize alive counts to 0
@@ -101,6 +115,9 @@ public class Main : MonoBehaviour
         landscapePlane = new Plane(landscapePlaneTransform.up, landscapePlaneTransform.position);
         nextSpawnIndex = 0;
 
+
+        // Transfer buffer
+        
     }
 
     void Update()
@@ -122,18 +139,27 @@ public class Main : MonoBehaviour
         bool spawnParticle = false;
         computeShader.SetInt("_spawnIndex", -1);
 
-        if (isMousePressed)
+        if (landscapePlane.Raycast(Camera.main.ScreenPointToRay(Mouse.current.position.ReadValue()), out float enter))
         {
-            if (landscapePlane.Raycast(Camera.main.ScreenPointToRay(Mouse.current.position.ReadValue()), out float enter))
+            Vector3 hitPoint = Camera.main.ScreenPointToRay(Mouse.current.position.ReadValue()).GetPoint(enter);
+            if (isMousePressed)
             {
-                Vector3 hitPoint = Camera.main.ScreenPointToRay(Mouse.current.position.ReadValue()).GetPoint(enter);
                 computeShader.SetVector("_mousePosition", new Vector2(hitPoint.x, hitPoint.z));
                 spawnParticle = nextSpawnIndex < size * size;
                 computeShader.SetInt("_mouseButtonPressed", Mouse.current.leftButton.isPressed ? 0 : 1);
-                if (_spawnCounter++ % 10 == 0)
+                int divisor = Mathf.Max(1, (int)(1 / (Time.deltaTime * spawnRate)));
+
+                if (_spawnCounter++ % divisor == 0)
                     computeShader.SetInt("_spawnIndex", spawnParticle ? nextSpawnIndex : -1);
-                Vector2 mouseDelta = Mouse.current.delta.ReadValue();
+
+                Vector2 hitPoint2D = new Vector2(hitPoint.z, -hitPoint.x);
+                Vector2 mouseDelta = hitPoint2D - _mousePos;
                 computeShader.SetVector("_mouseDelta", new Vector3(mouseDelta.y, 0, -mouseDelta.x));
+                _mousePos = hitPoint2D;
+            }
+            else
+            {
+                _mousePos = new Vector2(hitPoint.z, -hitPoint.x);
             }
         }
         computeShader.SetInt("_isMouseClicked", isMousePressed ? 1 : 0);
@@ -180,6 +206,13 @@ public class Main : MonoBehaviour
 
         (_particlesDataBuffer, _nextParticlesDataBuffer) = (_nextParticlesDataBuffer, _particlesDataBuffer);
         particleControl.DrawInstances(_particlesDataBuffer, size * size, glow, particleSize);
+
+        // Pack position + isAlive into a compact float4 buffer for the VFX Graph trail.
+        computeShader.SetBuffer(_packVFXDataKernel, "_particlesDataRead", _particlesDataBuffer);
+        computeShader.SetBuffer(_packVFXDataKernel, "_vfxPositionBuffer", _vfxPositionBuffer);
+        computeShader.Dispatch(_packVFXDataKernel, threadGroupSize, 1, threadGroupSize);
+
+        vfxGraph.SetGraphicsBuffer("ParticlesBuffer", _vfxPositionBuffer);
     }
 
     void OnDestroy()
@@ -192,6 +225,11 @@ public class Main : MonoBehaviour
         if (_nextParticlesDataBuffer != null)
         {
             _nextParticlesDataBuffer.Release();
+        }
+
+        if (_vfxPositionBuffer != null)
+        {
+            _vfxPositionBuffer.Release();
         }
 
         if (_gameStatsBuffer != null)

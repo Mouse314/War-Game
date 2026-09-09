@@ -1,9 +1,11 @@
 #pragma kernel CSMain
+#pragma kernel PackVFXData
 
 #include "Assets/Shaders/ParticleData.hlsl"
 
 StructuredBuffer<ParticleData> _particlesDataRead;
 RWStructuredBuffer<ParticleData> _particlesDataWrite;
+RWStructuredBuffer<float4> _vfxPositionBuffer; // xyz = position, w = isAlive (0 or 1)
 int size;
 
 RWStructuredBuffer<int> _gameStats; // 0 = faction 0 alive count, 1 = faction 1 alive count
@@ -92,7 +94,7 @@ void CSMain (uint3 id : SV_DispatchThreadID)
 
         if (distance > 0.0001 && distance < 1.0 && _mouseButtonPressed == particleData.fraction && length(_mouseDelta) > 0.0001)
         {
-            float force = 30;
+            float force = 60.0;
             particleData.velocity += (1.0 - distance) * normalize(_mouseDelta) * -force * deltaTime;
         }
     }
@@ -238,4 +240,14 @@ void CSMain (uint3 id : SV_DispatchThreadID)
 
     // --- Update particle data ---
     _particlesDataWrite[index] = particleData;
+}
+
+[numthreads(4,1,4)]
+void PackVFXData (uint3 id : SV_DispatchThreadID)
+{
+    int index = id.x * size + id.z;
+    if (index >= size * size) return;
+
+    ParticleData particleData = _particlesDataRead[index];
+    _vfxPositionBuffer[index] = float4(particleData.position, particleData.isAlive != 0 ? 1.0 : 0.0);
 }

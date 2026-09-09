@@ -39,7 +39,7 @@ public class SpatialHashSystem : IDisposable
     /// <summary>
     /// Вызывать каждый кадр из MonoBehaviour.Update()
     /// </summary>
-    public void Dispatch(ComputeBuffer particleDataBuffer, float searchRadius)
+    public void Dispatch(GraphicsBuffer particleDataBuffer, float searchRadius)
     {
         if (particleDataBuffer == null || searchRadius <= 0.0f)
         {

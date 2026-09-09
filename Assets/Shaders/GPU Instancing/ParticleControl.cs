@@ -7,7 +7,7 @@ public class ParticleControl : ScriptableObject
     public Mesh particleMesh;
     public Material particleMaterial;
 
-    public void DrawInstances(ComputeBuffer particlesDataBuffer, int totalParticles, float glow = 1.0f, float particleSize = 0.02f)
+    public void DrawInstances(GraphicsBuffer particlesDataBuffer, int totalParticles, float glow = 1.0f, float particleSize = 0.02f)
     {
         particleMaterial.SetBuffer("_particlesData", particlesDataBuffer);
         particleMaterial.SetFloat("glow", glow);
